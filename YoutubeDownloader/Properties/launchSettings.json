@@ -1,7 +1,8 @@
 {
   "profiles": {
     "YoutubeDownloader": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "\"D:\\\\Downloads\"\r\n\"https://www.youtube.com/watch?v=bJ4Fauyg3jc\""
     }
   }
 }
