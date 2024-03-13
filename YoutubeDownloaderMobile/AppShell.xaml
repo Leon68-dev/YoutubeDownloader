@@ -6,7 +6,7 @@
     xmlns:local="clr-namespace:YoutubeDownloaderMobile"
     xmlns:views="clr-namespace:YoutubeDownloaderMobile.Views"
     Shell.FlyoutBehavior="Disabled"
-    Title="Youtube Downloader Mobile">
+    Title="Youtube Downloader">
 
     <ShellContent
         Title="Youtube Downloader"
