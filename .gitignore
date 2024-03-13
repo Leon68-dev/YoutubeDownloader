@@ -2,8 +2,8 @@
 
 /YoutubeDownloader/bin/*
 /YoutubeDownloader/obj/*
-/YoutubeDownloader/keystore.csproj.user
+/YoutubeDownloader/YoutubeDownloader.csproj.user
 
 /YoutubeDownloaderMobile/bin/*
 /YoutubeDownloaderMobile/obj/*
-/YoutubeDownloaderMobile/keystore.csproj.user
+/YoutubeDownloaderMobile/YoutubeDownloaderMobile.csproj.user
