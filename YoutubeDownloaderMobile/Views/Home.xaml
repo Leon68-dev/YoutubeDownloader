@@ -4,7 +4,7 @@
              xmlns:viewModels="clr-namespace:YoutubeDownloaderMobile.ViewModels"
              xmlns:models="clr-namespace:YoutubeDownloaderMobile.Models"
              x:Class="YoutubeDownloaderMobile.Views.Home"
-             Title="Download Youtube movie">
+             Title="Download Movie">
     
     <ContentPage.BindingContext>
         <viewModels:HomeViewModel />
@@ -60,11 +60,18 @@
                    TextColor="Brown"
                    IsVisible="{Binding isShowLoading}" />
             
-            <Label Text="{Binding downloading}"
+            <Label Text="Downloading file..."
                    FontSize="32"
-                   TextColor="Brown"
+                   TextColor="Green"
                    IsVisible="{Binding isShowDownloading}" />
 
+            <!--<StackLayout>
+                <ProgressBar Progress="{Binding downloadingProgress}" 
+                             BackgroundColor="LightGray" 
+                             ProgressColor="Green"
+                             IsVisible="{Binding isShowDownloading}"/>
+            </StackLayout>-->
+            
         </StackLayout>
 
         <CollectionView x:Name="downloadDataCollectionView"

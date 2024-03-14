@@ -46,6 +46,20 @@ namespace YoutubeDownloaderMobile.ViewModels
             }
         }
 
+        private double _downloadingProgress = 0;
+        public double downloadingProgress
+        {
+            get => _downloadingProgress;
+            set
+            {
+                if (_downloadingProgress != value)
+                {
+                    _downloadingProgress = value;
+                    OnPropertyChanged("downloadingProgress");
+                }
+            }
+        }
+
         private string _downloading = string.Empty;
         public string downloading
         {
@@ -217,8 +231,14 @@ namespace YoutubeDownloaderMobile.ViewModels
             isVisibleDownloadDataCollection = true;
         }
 
+        private bool _isRunDownloadFile = false;
         public async Task downloadFile(int index)
         {
+            if (_isRunDownloadFile)
+                return;
+
+            _isRunDownloadFile = true;
+                
             var streamInfo = _muxedStreams[index];
             string fileName = $"{_sanitizedTitle}_{streamInfo.VideoQuality.Label}.{streamInfo.Container}";
             fileName = fileName.Replace("/", "-");
@@ -234,31 +254,39 @@ namespace YoutubeDownloaderMobile.ViewModels
                 isVisibleDownloadDataCollection = false;
                 isEnableUrlEditor = false;
                 
-                isShowLoading = true;
-                //isShowDownloading = true;
+                isShowLoading = false;
+                isShowDownloading = true;
 
-                downloading = "Downloading:";
+                downloading = "Downloading file...";
 
                 //using (var httpClient = new HttpClient())
                 //{
                 //    httpClient.Timeout = TimeSpan.FromMinutes(5);
                 //    using var httpResponse = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
                 //    {
-                //        var totalBytes = httpResponse.Content.Headers.ContentLength; // Get total bytes if available
+                //        var totalBytes = httpResponse.Content.Headers.ContentLength;
 
                 //        using var contentStream = await httpResponse.Content.ReadAsStreamAsync();
-                //        var buffer = new byte[4096];
+                //        var buffer = new byte[1024 * 256];
                 //        int bytesRead;
                 //        long downloadedBytes = 0;
 
                 //        using (var memoryStream = new MemoryStream())
                 //        {
+                //            int clc = 0;
                 //            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                 //            {
                 //                downloadedBytes += bytesRead;
                 //                await memoryStream.WriteAsync(buffer, 0, bytesRead);
                 //                double progressPercentage = (double)(totalBytes > 0 ? (double)downloadedBytes / totalBytes * 100 : -1);
-                //                downloading = $"Downloading: {((int)progressPercentage)}%";
+
+                //                if(clc != (int)progressPercentage) 
+                //                {
+                //                    //downloading = $"Downloading {((int)progressPercentage)}%";
+                //                    downloadingProgress = ((double)((int)progressPercentage)) / 100;
+                //                }
+
+                //                clc = (int)progressPercentage;
                 //            }
 
                 //            await memoryStream.FlushAsync(); // Ensure all data is written
@@ -276,8 +304,9 @@ namespace YoutubeDownloaderMobile.ViewModels
                 using (var httpClient = new HttpClient())
                 {
                     httpClient.Timeout = TimeSpan.FromMinutes(5);
-                    
+
                     var memoryStream = await httpClient.GetStreamAsync(streamInfo.Url);
+
                     var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
                     if (fileSaverResult.IsSuccessful)
                     {
@@ -291,9 +320,12 @@ namespace YoutubeDownloaderMobile.ViewModels
             {
                 System.Diagnostics.Debug.WriteLine(ex.Message);
                 System.Diagnostics.Debug.WriteLine(ex.StackTrace);
+
+                ToastUtil.show(ex.Message);
             }
 
             downloading = string.Empty;
+            downloadingProgress = 0;
 
             isEnableUrlEditor = true;
             isEnablePasteButton = true;
