@@ -1,25 +1,21 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Messaging;
 using YoutubeDownloaderMobile.Models;
 using YoutubeDownloaderMobile.Services;
-using YoutubeDownloaderMobile.Views;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using YoutubeExplode;
-using System;
 using YoutubeExplode.Videos.Streams;
 using CommunityToolkit.Maui.Storage;
-using System.Net.Http;
-using AngleSharp.Dom;
-using System.IO;
+using Microsoft.Maui;
 
 
 namespace YoutubeDownloaderMobile.ViewModels 
 {
     public class HomeViewModel : ObservableObject, INotifyPropertyChanged
     {
+        public string version => $"v.{AppInfo.VersionString}";
         public ICommand clickPasteCommand { get; }
         public ICommand clickGetDataCommand { get; }
 
@@ -59,7 +55,7 @@ namespace YoutubeDownloaderMobile.ViewModels
                 if (_downloading != value)
                 {
                     _downloading = value;
-                    OnPropertyChanged("downloadURL");
+                    OnPropertyChanged("downloading");
                 }
             }
         }
@@ -130,6 +126,20 @@ namespace YoutubeDownloaderMobile.ViewModels
                 {
                     _isShowLoading = value;
                     OnPropertyChanged("isShowLoading");
+                }
+            }
+        }
+
+        private bool _isShowDownloading = false;
+        public bool isShowDownloading
+        {
+            get => _isShowDownloading;
+            set
+            {
+                if (_isShowDownloading != value)
+                {
+                    _isShowDownloading = value;
+                    OnPropertyChanged("isShowDownloading");
                 }
             }
         }
@@ -205,8 +215,6 @@ namespace YoutubeDownloaderMobile.ViewModels
             isEnableGetDataButton = true;
             isShowLoading = false;
             isVisibleDownloadDataCollection = true;
-
-            return;
         }
 
         public async Task downloadFile(int index)
@@ -221,26 +229,47 @@ namespace YoutubeDownloaderMobile.ViewModels
                 if (status != PermissionStatus.Granted)
                     status = await Permissions.RequestAsync<Permissions.StorageWrite>();
 
-                using (var client = new HttpClient())
+                isEnablePasteButton = false;
+                isEnableGetDataButton = false;
+                isVisibleDownloadDataCollection = false;
+                isShowLoading = false;
+                isEnableUrlEditor = false;
+                isShowDownloading = true;
+                
+                downloading = "Downloading:";
+
+                using (var httpClient = new HttpClient())
                 {
-                    isEnablePasteButton = false;
-                    isEnableGetDataButton = false;
-                    isVisibleDownloadDataCollection = false;
-                    isShowLoading = true;
-                    isEnableUrlEditor = false;
+                    httpClient.Timeout = TimeSpan.FromMinutes(5);
+                    using var httpResponse = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
 
-                    client.Timeout = TimeSpan.FromMinutes(5);
-                    var fileBytes = await client.GetByteArrayAsync(streamInfo.Url);
-                    var stream = new MemoryStream(fileBytes);
+                    var totalBytes = httpResponse.Content.Headers.ContentLength; // Get total bytes if available
 
-                    var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", stream);
-                    if (fileSaverResult.IsSuccessful)
+                    using var contentStream = await httpResponse.Content.ReadAsStreamAsync();
+                    var buffer = new byte[4096];
+                    int bytesRead;
+                    long downloadedBytes = 0;
+
+                    using (var memoryStream = new MemoryStream())
                     {
-                        fileSaverResult.EnsureSuccess();
-                        ToastUtil.show("File was downloaded and saved");
+                        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                        {
+                            downloadedBytes += bytesRead;
+                            await memoryStream.WriteAsync(buffer, 0, bytesRead);
+                            double progressPercentage = (double)(totalBytes > 0 ? (double)downloadedBytes / totalBytes * 100 : -1);
+                            downloading = $"Downloading: {((int)progressPercentage)}%";
+                        }
+
+                        await memoryStream.FlushAsync(); // Ensure all data is written
+
+                        var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                        if (fileSaverResult.IsSuccessful)
+                        {
+                            fileSaverResult.EnsureSuccess();
+                            ToastUtil.show("File was downloaded and saved");
+                        }
                     }
                 }
-
             }
             catch (Exception ex)
             {
@@ -248,11 +277,14 @@ namespace YoutubeDownloaderMobile.ViewModels
                 System.Diagnostics.Debug.WriteLine(ex.StackTrace);
             }
 
+            downloading = string.Empty;
+
             isEnableUrlEditor = true;
             isEnablePasteButton = true;
             isEnableGetDataButton = true;
             isShowLoading = false;
             isVisibleDownloadDataCollection = true;
+            isShowDownloading = false;
         }
         
     }

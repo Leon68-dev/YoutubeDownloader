@@ -10,6 +10,10 @@
         <viewModels:HomeViewModel />
     </ContentPage.BindingContext>
 
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="{Binding version}" />
+    </ContentPage.ToolbarItems>
+
     <Grid >
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -59,7 +63,7 @@
             <Label Text="{Binding downloading}"
                    FontSize="32"
                    TextColor="Brown"
-                   IsVisible="{Binding isShowLoading}" />
+                   IsVisible="{Binding isShowDownloading}" />
 
         </StackLayout>
 
