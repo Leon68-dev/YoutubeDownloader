@@ -13,7 +13,7 @@ public partial class Home : ContentPage
         _viewModel = (HomeViewModel)BindingContext;
     }
 
-    protected override async void OnAppearing()
+    protected override void OnAppearing()
     {
         base.OnAppearing();
     }

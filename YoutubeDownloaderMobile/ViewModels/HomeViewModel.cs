@@ -11,6 +11,9 @@ using YoutubeExplode;
 using System;
 using YoutubeExplode.Videos.Streams;
 using CommunityToolkit.Maui.Storage;
+using System.Net.Http;
+using AngleSharp.Dom;
+using System.IO;
 
 
 namespace YoutubeDownloaderMobile.ViewModels 
@@ -43,6 +46,20 @@ namespace YoutubeDownloaderMobile.ViewModels
 
                     if(string.IsNullOrEmpty(_downloadURL))
                         isVisibleDownloadDataCollection = false;
+                }
+            }
+        }
+
+        private string _downloading = string.Empty;
+        public string downloading
+        {
+            get => _downloading;
+            set
+            {
+                if (_downloading != value)
+                {
+                    _downloading = value;
+                    OnPropertyChanged("downloadURL");
                 }
             }
         }
@@ -157,10 +174,12 @@ namespace YoutubeDownloaderMobile.ViewModels
             isEnableGetDataButton = false;
             isVisibleDownloadDataCollection = false;
             isShowLoading = true;
-
+            
             var youtube = new YoutubeClient();
             var video = await youtube.Videos.GetAsync(downloadURL);
-            var streamManifest = await youtube.Videos.Streams.GetManifestAsync(video.Id);
+           
+            var streamManifest = await Task.Run(async () => await youtube.Videos.Streams.GetManifestAsync(video.Id));
+            
             _muxedStreams = streamManifest.GetMuxedStreams().OrderByDescending(s => s.VideoQuality).ToList();
             _sanitizedTitle = video.Title;
 
@@ -196,28 +215,37 @@ namespace YoutubeDownloaderMobile.ViewModels
             string fileName = $"{_sanitizedTitle}_{streamInfo.VideoQuality.Label}.{streamInfo.Container}";
             fileName = fileName.Replace("/", "-");
 
-            using (var stream = new MemoryStream())
+            try
             {
-                var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", stream);
-                if (fileSaverResult.IsSuccessful)
+                var status = await Permissions.CheckStatusAsync<Permissions.StorageRead>();
+                if (status != PermissionStatus.Granted)
+                    status = await Permissions.RequestAsync<Permissions.StorageWrite>();
+
+                using (var client = new HttpClient())
                 {
                     isEnablePasteButton = false;
                     isEnableGetDataButton = false;
                     isVisibleDownloadDataCollection = false;
                     isShowLoading = true;
-                    isEnableUrlEditor= false;
+                    isEnableUrlEditor = false;
 
-                    fileSaverResult.EnsureSuccess();
+                    client.Timeout = TimeSpan.FromMinutes(5);
+                    var fileBytes = await client.GetByteArrayAsync(streamInfo.Url);
+                    var stream = new MemoryStream(fileBytes);
 
-                    using (var client = new HttpClient())
+                    var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", stream);
+                    if (fileSaverResult.IsSuccessful)
                     {
-                        client.Timeout = TimeSpan.FromMinutes(5);
-                        using (var file = new FileStream(fileSaverResult.FilePath, FileMode.Create, FileAccess.Write, FileShare.None))
-                            await client.DownloadAsync(streamInfo.Url, file);
+                        fileSaverResult.EnsureSuccess();
+                        ToastUtil.show("File was downloaded and saved");
                     }
-                    
-                    ToastUtil.show("File was downloaded");
                 }
+
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+                System.Diagnostics.Debug.WriteLine(ex.StackTrace);
             }
 
             isEnableUrlEditor = true;
@@ -226,14 +254,7 @@ namespace YoutubeDownloaderMobile.ViewModels
             isShowLoading = false;
             isVisibleDownloadDataCollection = true;
         }
-
-        public void runOnPropertyChanged()
-        {
-            OnPropertyChanged("downloadURL");
-            OnPropertyChanged("downloadDataCollection");
-            OnPropertyChanged("isVisibleUpButton");
-        }
-
+        
     }
-    
+
 }

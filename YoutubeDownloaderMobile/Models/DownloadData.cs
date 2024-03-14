@@ -1,4 +1,5 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
+using Microsoft.VisualBasic;
 
 
 namespace YoutubeDownloaderMobile.Models
@@ -10,12 +11,17 @@ namespace YoutubeDownloaderMobile.Models
         public string name { get; set; } = string.Empty;
         public double size { get; set; } = 0.0;
         public string sanitizedTitle { get; set; } = string.Empty;
-        public string buttonLabel { get { return ToString(); } }
         public override string ToString()
         {
-            string res = string.Empty;
-            res = $"{sanitizedTitle} - {label} ({name}) {(int)size}MB";
+            string tmp = sanitizedTitle;
+            if (tmp.Length > 25)
+            {
+                tmp = $"{tmp.Substring(0, 21)}...";
+            }
+            string res = $"{tmp} - {label} ({name}) {(int)size}MB";
             return res;
         }
+        public string buttonLabel { get { return ToString(); } }
+
     }
 }

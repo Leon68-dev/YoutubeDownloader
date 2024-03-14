@@ -50,10 +50,17 @@
                      Grid.Row="1" 
                      VerticalOptions="Center"
                      HorizontalOptions="Center">
+            
             <Label Text="Loading..."
                    FontSize="32"
                    TextColor="Brown"
                    IsVisible="{Binding isShowLoading}" />
+            
+            <Label Text="{Binding downloading}"
+                   FontSize="32"
+                   TextColor="Brown"
+                   IsVisible="{Binding isShowLoading}" />
+
         </StackLayout>
 
         <CollectionView x:Name="downloadDataCollectionView"
