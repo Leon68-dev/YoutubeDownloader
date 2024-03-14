@@ -232,44 +232,60 @@ namespace YoutubeDownloaderMobile.ViewModels
                 isEnablePasteButton = false;
                 isEnableGetDataButton = false;
                 isVisibleDownloadDataCollection = false;
-                isShowLoading = false;
                 isEnableUrlEditor = false;
-                isShowDownloading = true;
                 
+                isShowLoading = true;
+                //isShowDownloading = true;
+
                 downloading = "Downloading:";
+
+                //using (var httpClient = new HttpClient())
+                //{
+                //    httpClient.Timeout = TimeSpan.FromMinutes(5);
+                //    using var httpResponse = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
+                //    {
+                //        var totalBytes = httpResponse.Content.Headers.ContentLength; // Get total bytes if available
+
+                //        using var contentStream = await httpResponse.Content.ReadAsStreamAsync();
+                //        var buffer = new byte[4096];
+                //        int bytesRead;
+                //        long downloadedBytes = 0;
+
+                //        using (var memoryStream = new MemoryStream())
+                //        {
+                //            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                //            {
+                //                downloadedBytes += bytesRead;
+                //                await memoryStream.WriteAsync(buffer, 0, bytesRead);
+                //                double progressPercentage = (double)(totalBytes > 0 ? (double)downloadedBytes / totalBytes * 100 : -1);
+                //                downloading = $"Downloading: {((int)progressPercentage)}%";
+                //            }
+
+                //            await memoryStream.FlushAsync(); // Ensure all data is written
+
+                //            var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                //            if (fileSaverResult.IsSuccessful)
+                //            {
+                //                fileSaverResult.EnsureSuccess();
+                //                ToastUtil.show("File was downloaded and saved");
+                //            }
+                //        }
+                //    }
+                //}
 
                 using (var httpClient = new HttpClient())
                 {
                     httpClient.Timeout = TimeSpan.FromMinutes(5);
-                    using var httpResponse = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
-
-                    var totalBytes = httpResponse.Content.Headers.ContentLength; // Get total bytes if available
-
-                    using var contentStream = await httpResponse.Content.ReadAsStreamAsync();
-                    var buffer = new byte[4096];
-                    int bytesRead;
-                    long downloadedBytes = 0;
-
-                    using (var memoryStream = new MemoryStream())
+                    
+                    var memoryStream = await httpClient.GetStreamAsync(streamInfo.Url);
+                    var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                    if (fileSaverResult.IsSuccessful)
                     {
-                        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                        {
-                            downloadedBytes += bytesRead;
-                            await memoryStream.WriteAsync(buffer, 0, bytesRead);
-                            double progressPercentage = (double)(totalBytes > 0 ? (double)downloadedBytes / totalBytes * 100 : -1);
-                            downloading = $"Downloading: {((int)progressPercentage)}%";
-                        }
-
-                        await memoryStream.FlushAsync(); // Ensure all data is written
-
-                        var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
-                        if (fileSaverResult.IsSuccessful)
-                        {
-                            fileSaverResult.EnsureSuccess();
-                            ToastUtil.show("File was downloaded and saved");
-                        }
+                        fileSaverResult.EnsureSuccess();
+                        ToastUtil.show("File was downloaded and saved");
                     }
                 }
+
             }
             catch (Exception ex)
             {
@@ -282,9 +298,12 @@ namespace YoutubeDownloaderMobile.ViewModels
             isEnableUrlEditor = true;
             isEnablePasteButton = true;
             isEnableGetDataButton = true;
-            isShowLoading = false;
             isVisibleDownloadDataCollection = true;
+
+            isShowLoading = false;
             isShowDownloading = false;
+
+            await Clipboard.Default.SetTextAsync(string.Empty);
         }
         
     }

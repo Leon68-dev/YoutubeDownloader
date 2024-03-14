@@ -88,11 +88,11 @@ namespace YoutubeDownloader
                 var progress = new Progress<float>();
                 progress.ProgressChanged += Progress_ProgressChanged;    
 
-                using (var client = new HttpClient())
+                using (var httpClient = new HttpClient())
                 {
-                    client.Timeout = TimeSpan.FromMinutes(5);
+                    httpClient.Timeout = TimeSpan.FromMinutes(5);
                     using (var file = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
-                        await client.DownloadAsync(streamInfo.Url, file, progress);
+                        await httpClient.DownloadAsync(streamInfo.Url, file, progress);
                 }
 
                 Console.WriteLine("Download completed!");
