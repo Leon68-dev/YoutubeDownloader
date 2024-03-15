@@ -158,6 +158,20 @@ namespace YoutubeDownloaderMobile.ViewModels
             }
         }
 
+        private bool _isShowDownloadProgress = false;
+        public bool isShowDownloadProgress
+        {
+            get => _isShowDownloadProgress;
+            set
+            {
+                if (_isShowDownloadProgress != value)
+                {
+                    _isShowDownloadProgress = value;
+                    OnPropertyChanged("isShowDownloadProgress");
+                }
+            }
+        }
+
         private ObservableCollection<DownloadData> _downloadDataCollection = new ObservableCollection<DownloadData>();
         public ObservableCollection<DownloadData> downloadDataCollection
         {
@@ -231,17 +245,13 @@ namespace YoutubeDownloaderMobile.ViewModels
             isVisibleDownloadDataCollection = true;
         }
 
-        private bool _isRunDownloadFile = false;
         public async Task downloadFile(int index)
         {
-            if (_isRunDownloadFile)
-                return;
-
-            _isRunDownloadFile = true;
-                
             var streamInfo = _muxedStreams[index];
             string fileName = $"{_sanitizedTitle}_{streamInfo.VideoQuality.Label}.{streamInfo.Container}";
             fileName = fileName.Replace("/", "-");
+            
+            var currentPlatform = DeviceInfo.Platform;
 
             try
             {
@@ -253,75 +263,82 @@ namespace YoutubeDownloaderMobile.ViewModels
                 isEnableGetDataButton = false;
                 isVisibleDownloadDataCollection = false;
                 isEnableUrlEditor = false;
-                
                 isShowLoading = false;
-                isShowDownloading = true;
 
+                isShowDownloading = true;
                 downloading = "Downloading file...";
 
-                //using (var httpClient = new HttpClient())
-                //{
-                //    httpClient.Timeout = TimeSpan.FromMinutes(5);
-                //    using var httpResponse = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
-                //    {
-                //        var totalBytes = httpResponse.Content.Headers.ContentLength;
-
-                //        using var contentStream = await httpResponse.Content.ReadAsStreamAsync();
-                //        var buffer = new byte[1024 * 256];
-                //        int bytesRead;
-                //        long downloadedBytes = 0;
-
-                //        using (var memoryStream = new MemoryStream())
-                //        {
-                //            int clc = 0;
-                //            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                //            {
-                //                downloadedBytes += bytesRead;
-                //                await memoryStream.WriteAsync(buffer, 0, bytesRead);
-                //                double progressPercentage = (double)(totalBytes > 0 ? (double)downloadedBytes / totalBytes * 100 : -1);
-
-                //                if(clc != (int)progressPercentage) 
-                //                {
-                //                    //downloading = $"Downloading {((int)progressPercentage)}%";
-                //                    downloadingProgress = ((double)((int)progressPercentage)) / 100;
-                //                }
-
-                //                clc = (int)progressPercentage;
-                //            }
-
-                //            await memoryStream.FlushAsync(); // Ensure all data is written
-
-                //            var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
-                //            if (fileSaverResult.IsSuccessful)
-                //            {
-                //                fileSaverResult.EnsureSuccess();
-                //                ToastUtil.show("File was downloaded and saved");
-                //            }
-                //        }
-                //    }
-                //}
-
-                using (var httpClient = new HttpClient())
+                if (currentPlatform == DevicePlatform.WinUI)
                 {
-                    httpClient.Timeout = TimeSpan.FromMinutes(5);
+                    isShowDownloadProgress = true;
 
-                    var memoryStream = await httpClient.GetStreamAsync(streamInfo.Url);
-
-                    var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
-                    if (fileSaverResult.IsSuccessful)
+                    using (var httpClient = new HttpClient())
                     {
-                        fileSaverResult.EnsureSuccess();
-                        ToastUtil.show("File was downloaded and saved");
+                        httpClient.Timeout = TimeSpan.FromMinutes(5);
+                        using var httpResponse = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
+                        {
+                            var totalBytes = httpResponse.Content.Headers.ContentLength;
+
+                            using var contentStream = await httpResponse.Content.ReadAsStreamAsync();
+                            var buffer = new byte[1024 * 256];
+                            int bytesRead;
+                            long downloadedBytes = 0;
+
+                            using (var memoryStream = new MemoryStream())
+                            {
+                                int clc = 0;
+                                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                                {
+                                    downloadedBytes += bytesRead;
+                                    await memoryStream.WriteAsync(buffer, 0, bytesRead);
+                                    double progressPercentage = (double)(totalBytes > 0 ? (double)downloadedBytes / totalBytes * 100 : -1);
+
+                                    if (clc != (int)progressPercentage)
+                                        downloadingProgress = ((double)((int)progressPercentage)) / 100;
+
+                                    clc = (int)progressPercentage;
+                                }
+
+                                await memoryStream.FlushAsync();
+
+                                var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                                if (fileSaverResult.IsSuccessful)
+                                {
+                                    fileSaverResult.EnsureSuccess();
+                                    
+                                    if(Application.Current != null && Application.Current.MainPage != null)
+                                        _ = Application.Current.MainPage.DisplayAlert("Downloading", "File was downloaded and saved", "OK");
+                                }
+                            }
+                        }
                     }
                 }
+                else
+                {
+                    using (var httpClient = new HttpClient())
+                    {
+                        httpClient.Timeout = TimeSpan.FromMinutes(5);
 
+                        var memoryStream = await httpClient.GetStreamAsync(streamInfo.Url);
+
+                        var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                        if (fileSaverResult.IsSuccessful)
+                        {
+                            fileSaverResult.EnsureSuccess();
+                            ToastUtil.show("File was downloaded and saved");
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine(ex.Message);
                 System.Diagnostics.Debug.WriteLine(ex.StackTrace);
 
-                ToastUtil.show(ex.Message);
+                if (currentPlatform == DevicePlatform.WinUI && Application.Current != null && Application.Current.MainPage != null)
+                    _ = Application.Current.MainPage.DisplayAlert("Error", ex.Message, "OK");
+                else 
+                    ToastUtil.show(ex.Message);
             }
 
             downloading = string.Empty;
@@ -334,6 +351,7 @@ namespace YoutubeDownloaderMobile.ViewModels
 
             isShowLoading = false;
             isShowDownloading = false;
+            isShowDownloadProgress = false;
 
             await Clipboard.Default.SetTextAsync(string.Empty);
         }

@@ -65,12 +65,12 @@
                    TextColor="Green"
                    IsVisible="{Binding isShowDownloading}" />
 
-            <!--<StackLayout>
+            <StackLayout>
                 <ProgressBar Progress="{Binding downloadingProgress}" 
                              BackgroundColor="LightGray" 
                              ProgressColor="Green"
-                             IsVisible="{Binding isShowDownloading}"/>
-            </StackLayout>-->
+                             IsVisible="{Binding isShowDownloadProgress}"/>
+            </StackLayout>
             
         </StackLayout>
 
