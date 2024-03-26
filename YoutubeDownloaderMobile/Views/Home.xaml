@@ -69,6 +69,7 @@
                 <ProgressBar Progress="{Binding downloadingProgress}" 
                              BackgroundColor="LightGray" 
                              ProgressColor="Green"
+                             HeightRequest="5"
                              IsVisible="{Binding isShowDownloadProgress}"/>
             </StackLayout>
             

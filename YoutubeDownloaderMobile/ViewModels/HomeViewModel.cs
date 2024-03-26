@@ -198,6 +198,10 @@ namespace YoutubeDownloaderMobile.ViewModels
         {
             _downloadDataCollection.Clear();
             downloadURL = await Clipboard.Default.GetTextAsync() ?? "";
+
+#if DEBUG
+            downloadURL = "https://www.youtube.com/watch?v=iBP43OJLXqI";
+#endif
         }
 
         private void runGetDataCommand() 
@@ -268,7 +272,7 @@ namespace YoutubeDownloaderMobile.ViewModels
                 isShowDownloading = true;
                 downloading = "Downloading file...";
 
-                if (currentPlatform == DevicePlatform.WinUI)
+                //if (currentPlatform == DevicePlatform.WinUI)
                 {
                     isShowDownloadProgress = true;
 
@@ -300,8 +304,10 @@ namespace YoutubeDownloaderMobile.ViewModels
                                 }
 
                                 await memoryStream.FlushAsync();
+                                
+                                memoryStream.Seek(0, SeekOrigin.Begin);
 
-                                var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                                var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", stream: memoryStream);
                                 if (fileSaverResult.IsSuccessful)
                                 {
                                     fileSaverResult.EnsureSuccess();
@@ -313,22 +319,22 @@ namespace YoutubeDownloaderMobile.ViewModels
                         }
                     }
                 }
-                else
-                {
-                    using (var httpClient = new HttpClient())
-                    {
-                        httpClient.Timeout = TimeSpan.FromMinutes(5);
+                //else
+                //{
+                //    using (var httpClient = new HttpClient())
+                //    {
+                //        httpClient.Timeout = TimeSpan.FromMinutes(15);
 
-                        var memoryStream = await httpClient.GetStreamAsync(streamInfo.Url);
+                //        var memoryStream = await httpClient.GetStreamAsync(streamInfo.Url);
 
-                        var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
-                        if (fileSaverResult.IsSuccessful)
-                        {
-                            fileSaverResult.EnsureSuccess();
-                            ToastUtil.show("File was downloaded and saved");
-                        }
-                    }
-                }
+                //        var fileSaverResult = await FileSaver.Default.SaveAsync($"{fileName}", memoryStream);
+                //        if (fileSaverResult.IsSuccessful)
+                //        {
+                //            fileSaverResult.EnsureSuccess();
+                //            ToastUtil.show("File was downloaded and saved");
+                //        }
+                //    }
+                //}
             }
             catch (Exception ex)
             {
