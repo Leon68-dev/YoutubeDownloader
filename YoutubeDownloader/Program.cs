@@ -1,129 +1,187 @@
 ﻿using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Diagnostics;
-using System.Net;
-using System.Threading;
-using System.Web;
-using System.Xml;
 using YoutubeExplode;
-using YoutubeExplode.Videos;
+using YoutubeExplode.Videos.Streams;
 
-namespace YoutubeDownloader
+class Program
 {
-    class Program
+    private static readonly object _locker = new object();
+
+    static async Task Main(string[] args)
     {
-        private static object locker = new object();
+        Console.Clear();
+        Console.WriteLine("YouTube Downloader");
 
-        static async Task Main(string[] args)
+        if (args == null || args.Length != 2)
         {
-            Console.Clear();
-            Console.WriteLine("Youtube downloader");
-
-            if (args != null && args.Length != 2)
-            {
-                Console.WriteLine("For download video from You need use 2 params");
-                Console.WriteLine("\tParam 1 - Path for save on local PC");
-                Console.WriteLine("\tParam 2 - URL Youtube video");
-                return;
-            }
-
-            try
-            {
-                string outputDirectory = args[0];
-                string videoUrl = args[1];
-                await DownloadYouTubeVideo(videoUrl, outputDirectory);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("An error occurred while downloading the videos: " + ex.Message);
-            }
+            Console.WriteLine("To download a YouTube video, you need to use 2 parameters:");
+            Console.WriteLine("\tParameter 1: Path to save the file on your local PC");
+            Console.WriteLine("\tParameter 2: YouTube video URL");
+            return;
         }
 
-        static async Task DownloadYouTubeVideo(string videoUrl, string outputDirectory)
+        try
         {
-            var youtube = new YoutubeClient();
-            var video = await youtube.Videos.GetAsync(videoUrl);
-
-            string sanitizedTitle = string.Join("_", video.Title.Split(Path.GetInvalidFileNameChars()));
-            var streamManifest = await youtube.Videos.Streams.GetManifestAsync(video.Id);
-            var muxedStreams = streamManifest.GetMuxedStreams().OrderByDescending(s => s.VideoQuality).ToList();
-
-            Console.WriteLine("Video quality");
-            Console.WriteLine("----------------------------------------------------------------");
-            int index = 0;
-            foreach(var item in muxedStreams)
-            {
-                Console.WriteLine($"index: {index} - {item.VideoQuality.Label} ({item.Container.Name}) {(int)item.Size.MegaBytes}MB");
-                Console.WriteLine("----------------------------------------------------------------");
-                index++;
-            }
-
-            Console.Write("Please select index: ");
-            string indexStr = Console.ReadLine() ?? "0";
-
-            int indexParse = 0;
-            if (int.TryParse(indexStr, out indexParse))
-                index = indexParse;
-            else
-                index = 0;
-
-            if (index >= muxedStreams.Count)
-                index = 0;
-
-            var prog = new Progress<KeyValuePair<long, long>>();
-
-            if (muxedStreams.Any())
-            {
-                Console.WriteLine("Download started");
-                
-                moveTop += (muxedStreams.Count * 2) + 2;
-                var streamInfo = muxedStreams[index];
-                
-                //using var httpClient = new HttpClient();
-                //var stream = await httpClient.GetStreamAsync(streamInfo.Url);
-                var datetime = DateTime.Now;
-                string outputFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}_{streamInfo.VideoQuality.Label}.{streamInfo.Container}");
-                //using var outputStream = File.Create(outputFilePath);
-                //await stream.CopyToAsync(outputStream);
-
-                var progress = new Progress<float>();
-                progress.ProgressChanged += Progress_ProgressChanged;    
-
-                using (var httpClient = new HttpClient())
-                {
-                    httpClient.Timeout = TimeSpan.FromMinutes(5);
-                    using (var file = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
-                        await httpClient.DownloadAsync(streamInfo.Url, file, progress);
-                }
-
-                Console.WriteLine("Download completed!");
-                Console.WriteLine($"Video saved as: {outputFilePath}");
-                Console.WriteLine($"{datetime}");
-            }
-            else
-            {
-                Console.WriteLine($"No suitable video stream found for {video.Title}.");
-            }
-
+            string outputDirectory = args[0];
+            string videoUrl = args[1];
+            await DownloadYouTubeVideo(videoUrl, outputDirectory);
         }
-
-        static int clc = 0;
-        static int moveTop = 2;
-        private static void Progress_ProgressChanged(object? sender, float e)
+        catch (Exception ex)
         {
-            int prc = (int)(e * 100);
-            if (clc != prc) 
-            {
-                lock(locker)
-                {
-                    Console.SetCursorPosition(0, moveTop);
-                    Console.WriteLine($"                               ");
-                    Console.SetCursorPosition(0, moveTop);
-                    Console.WriteLine($"Downloading...{prc}%");
-                    Console.SetCursorPosition(0, moveTop);
-                }
-            }
-            clc = prc;
+            Console.WriteLine("An error occurred while downloading the video: " + ex.Message);
         }
     }
 
+    static async Task DownloadYouTubeVideo(string videoUrl, string outputDirectory)
+    {
+        var youtube = new YoutubeClient();
+        var video = await youtube.Videos.GetAsync(videoUrl);
+        string sanitizedTitle = string.Join("_", video.Title.Split(Path.GetInvalidFileNameChars()));
+        var streamManifest = await youtube.Videos.Streams.GetManifestAsync(video.Id);
+        var muxedStreams = streamManifest.GetMuxedStreams()
+                                         .Where(s => s.Container == Container.Mp4)
+                                         .OrderByDescending(s => s.VideoQuality)
+                                         .ToList();
+
+        if (muxedStreams.Any())
+        {
+            Console.WriteLine("Available muxed streams (video + audio):");
+            Console.WriteLine("----------------------------------------------------------------");
+            int index = 0;
+            foreach (var streamInfo in muxedStreams)
+            {
+                double fileSizeMb = streamInfo.Size.Bytes / (1024.0 * 1024.0);
+                Console.WriteLine($"Index: {index} - {streamInfo.VideoQuality.Label} ({streamInfo.Container.Name}) {fileSizeMb:F2} MB");
+                index++;
+            }
+            Console.WriteLine("----------------------------------------------------------------");
+
+            Console.Write("Please select an index to download: ");
+            string? indexStr = Console.ReadLine();
+
+            if (!int.TryParse(indexStr, out int selectedIndex) || selectedIndex < 0 || selectedIndex >= muxedStreams.Count)
+            {
+                selectedIndex = 0;
+                Console.WriteLine($"Invalid selection. Downloading video with the highest quality ({muxedStreams[selectedIndex].VideoQuality.Label}).");
+            }
+
+            var streamToDownload = muxedStreams[selectedIndex];
+
+            var progress = new Progress<double>(p =>
+            {
+                lock (_locker)
+                {
+                    Console.CursorLeft = 0;
+                    Console.Write($"Downloading... {p:P0}");
+                }
+            });
+
+            string outputFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}_{streamToDownload.VideoQuality.Label}.{streamToDownload.Container}");
+
+            Console.WriteLine("\nDownload started...");
+
+            await youtube.Videos.Streams.DownloadAsync(streamToDownload, outputFilePath, progress);
+
+            Console.WriteLine("\nDownload completed successfully!");
+            Console.WriteLine($"Video saved as: {outputFilePath}");
+        }
+        else
+        {
+            Console.WriteLine("No muxed streams found. Downloading separate video and audio streams...");
+            Console.WriteLine("This video has separate video and audio streams. Combining them automatically with FFmpeg.");
+
+            var videoStreamInfo = streamManifest.GetVideoStreams()
+                .Where(s => s.Container == Container.Mp4)
+                .OrderByDescending(s => s.VideoQuality)
+                .FirstOrDefault();
+
+            var audioStreamInfo = streamManifest.GetAudioStreams()
+                .Where(s => s.Container == Container.Mp4)
+                .OrderByDescending(s => s.Bitrate)
+                .FirstOrDefault();
+
+            if (videoStreamInfo != null && audioStreamInfo != null)
+            {
+                var progress = new Progress<double>(p =>
+                {
+                    lock (_locker)
+                    {
+                        Console.CursorLeft = 0;
+                        Console.Write($"Downloading video and audio... {p:P0}");
+                    }
+                });
+
+                string tempVideoFilePath = Path.Combine(outputDirectory, $"video_temp.{videoStreamInfo.Container}");
+                string tempAudioFilePath = Path.Combine(outputDirectory, $"audio_temp.{audioStreamInfo.Container}");
+                string combinedFilePath = Path.Combine(outputDirectory, $"output_video.mp4");
+                string finalFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}.mp4");
+
+                Console.WriteLine($"\nDownloading video stream to: {tempVideoFilePath}");
+                await youtube.Videos.Streams.DownloadAsync(videoStreamInfo, tempVideoFilePath, progress);
+
+                Console.WriteLine($"\nDownloading audio stream to: {tempAudioFilePath}");
+                await youtube.Videos.Streams.DownloadAsync(audioStreamInfo, tempAudioFilePath, progress);
+
+                Console.WriteLine("\nBoth streams downloaded. Combining them with FFmpeg...");
+
+                var ffmpegArguments = $"-i \"{tempVideoFilePath}\" -i \"{tempAudioFilePath}\" -c copy \"{combinedFilePath}\"";
+                await RunFFmpegProcess(ffmpegArguments);
+
+                File.Delete(tempVideoFilePath);
+                File.Delete(tempAudioFilePath);
+
+                if (File.Exists(combinedFilePath))
+                {
+                    Console.WriteLine("\nCombining completed. Renaming file...");
+                    File.Move(combinedFilePath, finalFilePath);
+                    Console.WriteLine($"Final video saved as: {finalFilePath}");
+                }
+                else
+                {
+                    Console.WriteLine("\nCombining failed. Final file was not created.");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"No suitable separate video or audio streams found for {video.Title}.");
+            }
+        }
+    }
+
+    private static async Task RunFFmpegProcess(string arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "ffmpeg",
+            Arguments = arguments,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using (var process = Process.Start(startInfo))
+        {
+            if (process == null)
+            {
+                Console.WriteLine("Failed to start FFmpeg. Make sure it is installed and in your system PATH.");
+                return;
+            }
+
+            var errorReader = process.StandardError;
+            while (!errorReader.EndOfStream)
+            {
+                string? line = await errorReader.ReadLineAsync();
+                if (line != null)
+                {
+                    Console.WriteLine(line);
+                }
+            }
+
+            await process.WaitForExitAsync();
+        }
+    }
 }
