@@ -4,6 +4,6 @@
 /YoutubeDownloader/obj/*
 /YoutubeDownloader/YoutubeDownloader.csproj.user
 
-/YoutubeDownloaderMobile/bin/*
-/YoutubeDownloaderMobile/obj/*
-/YoutubeDownloaderMobile/YoutubeDownloaderMobile.csproj.user
+/YoutubeDownloaderWinForms/bin/*
+/YoutubeDownloaderWinForms/obj/*
+/YoutubeDownloaderWinForms/YoutubeDownloaderWinForms.csproj.user
