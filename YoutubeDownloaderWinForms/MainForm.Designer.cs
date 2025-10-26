@@ -69,7 +69,7 @@
             // 
             // btnDownload
             // 
-            btnDownload.BackColor = SystemColors.GradientActiveCaption;
+            btnDownload.BackColor = SystemColors.ActiveCaption;
             btnDownload.Location = new Point(152, 82);
             btnDownload.Name = "btnDownload";
             btnDownload.Size = new Size(94, 29);
@@ -103,7 +103,6 @@
             txtLog.Name = "txtLog";
             txtLog.Size = new Size(727, 243);
             txtLog.TabIndex = 6;
-            txtLog.TextChanged += txtLog_TextChanged;
             // 
             // btnGetInfo
             // 

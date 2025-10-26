@@ -11,14 +11,17 @@ using System.Windows.Forms;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
 
+
 namespace YoutubeDownloaderWinForms
 {
     public partial class MainForm : Form
     {
         private static readonly object _locker = new object();
         private YoutubeClient _youtubeClient;
-        private List<MuxedStreamInfo> _muxedStreams; // Для зберігання доступних потоків
-        private CancellationTokenSource _cancellationTokenSource; // Для скасування завантаження
+        private List<MuxedStreamInfo> _muxedStreams; // To store available streams
+        private CancellationTokenSource _cancellationTokenSource; // For download cancellation
+
+        private const string FFmpegFileName = "ffmpeg";
 
         public MainForm()
         {
@@ -29,13 +32,13 @@ namespace YoutubeDownloaderWinForms
 
         private void InitializeUI()
         {
-            // Встановіть початкові значення або налаштування для елементів UI
-            txtOutputDirectory.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos); // Шлях за замовчуванням
+            // Set initial values or settings for UI elements
+            txtOutputDirectory.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos); // Default path
             progressBar.Minimum = 0;
             progressBar.Maximum = 100;
             progressBar.Value = 0;
             txtLog.ReadOnly = true;
-            btnDownload.Enabled = false; // Деактивуємо кнопку завантаження, доки не буде обрано потік
+            btnDownload.Enabled = false; // Disable download button until a stream is selected
         }
 
         private void Log(string message)
@@ -45,7 +48,10 @@ namespace YoutubeDownloaderWinForms
                 Invoke(new Action(() => Log(message)));
                 return;
             }
-            txtLog.AppendText($"{message}{Environment.NewLine}");
+            lock (_locker)
+            {
+                txtLog.AppendText($"{message}{Environment.NewLine}");
+            }
         }
 
         private void UpdateProgress(int percentage)
@@ -55,14 +61,18 @@ namespace YoutubeDownloaderWinForms
                 Invoke(new Action(() => UpdateProgress(percentage)));
                 return;
             }
-            progressBar.Value = percentage;
+            progressBar.Value = Math.Max(progressBar.Minimum, Math.Min(progressBar.Maximum, percentage));
         }
 
         private async void btnBrowseDirectory_Click(object sender, EventArgs e)
         {
             using (var fbd = new FolderBrowserDialog())
             {
-                fbd.SelectedPath = txtOutputDirectory.Text;
+                if (Directory.Exists(txtOutputDirectory.Text))
+                {
+                    fbd.SelectedPath = txtOutputDirectory.Text;
+                }
+
                 if (fbd.ShowDialog() == DialogResult.OK)
                 {
                     txtOutputDirectory.Text = fbd.SelectedPath;
@@ -70,20 +80,21 @@ namespace YoutubeDownloaderWinForms
             }
         }
 
-        private async void btnGetInfo_Click(object sender, EventArgs e) // Нова кнопка для отримання інформації про відео
+        private async void btnGetInfo_Click(object sender, EventArgs e) // New button for getting video information
         {
             string videoUrl = txtVideoUrl.Text.Trim();
             if (string.IsNullOrWhiteSpace(videoUrl))
             {
-                MessageBox.Show("Будь ласка, введіть URL відео YouTube.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please enter a YouTube video URL.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            Log("Отримання інформації про відео...");
+            Log("Getting video information...");
             btnGetInfo.Enabled = false;
             btnDownload.Enabled = false;
             lbxQualities.Items.Clear();
             _muxedStreams = null;
+            UpdateProgress(0);
 
             try
             {
@@ -97,7 +108,8 @@ namespace YoutubeDownloaderWinForms
 
                 if (_muxedStreams.Any())
                 {
-                    Log("Доступні муксовані потоки (відео + аудіо):");
+                    Log($"Video found: {video.Title}");
+                    Log("Available muxed streams (video + audio):");
                     int index = 0;
                     foreach (var streamInfo in _muxedStreams)
                     {
@@ -105,20 +117,21 @@ namespace YoutubeDownloaderWinForms
                         lbxQualities.Items.Add($"[{index}] {streamInfo.VideoQuality.Label} ({streamInfo.Container.Name}) {fileSizeMb:F2} MB");
                         index++;
                     }
-                    lbxQualities.SelectedIndex = 0; // Вибираємо найвищу якість за замовчуванням
+                    lbxQualities.SelectedIndex = 0; // Select highest quality by default
                     btnDownload.Enabled = true;
                 }
                 else
                 {
-                    Log("Муксовані потоки не знайдено. Буде завантажено окремі потоки відео та аудіо.");
-                    // У цьому випадку ми не надаємо вибір, а просто дозволяємо завантаження
+                    Log($"Video found: {video.Title}");
+                    Log("No muxed streams found. Separate video and audio streams will be downloaded.");
+                    // In this case, we don't provide a choice, just allow download
                     btnDownload.Enabled = true;
                 }
             }
             catch (Exception ex)
             {
-                Log($"Помилка при отриманні інформації про відео: {ex.Message}");
-                MessageBox.Show($"Помилка: {ex.Message}", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log($"Error getting video information: {ex.Message}");
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -133,16 +146,16 @@ namespace YoutubeDownloaderWinForms
 
             if (string.IsNullOrWhiteSpace(outputDirectory) || !Directory.Exists(outputDirectory))
             {
-                MessageBox.Show("Будь ласка, вкажіть дійсну директорію для збереження.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please specify a valid save directory.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             if (string.IsNullOrWhiteSpace(videoUrl))
             {
-                MessageBox.Show("Будь ласка, введіть URL відео YouTube.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please enter a YouTube video URL.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // Деактивуємо кнопки під час завантаження
+            // Disable buttons during download
             btnDownload.Enabled = false;
             btnGetInfo.Enabled = false;
             btnBrowseDirectory.Enabled = false;
@@ -150,7 +163,7 @@ namespace YoutubeDownloaderWinForms
             lbxQualities.Enabled = false;
             UpdateProgress(0);
             txtLog.Clear();
-            Log("Завантаження розпочато...");
+            Log("Download started...");
 
             _cancellationTokenSource = new CancellationTokenSource();
 
@@ -160,16 +173,16 @@ namespace YoutubeDownloaderWinForms
             }
             catch (OperationCanceledException)
             {
-                Log("Завантаження скасовано.");
+                Log("Download canceled.");
             }
             catch (Exception ex)
             {
-                Log($"Сталася помилка під час завантаження відео: {ex.Message}");
-                MessageBox.Show($"Помилка: {ex.Message}", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log($"An error occurred during video download: {ex.Message}");
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
-                // Активуємо кнопки після завершення/скасування
+                // Enable buttons after completion/cancellation
                 btnDownload.Enabled = true;
                 btnGetInfo.Enabled = true;
                 btnBrowseDirectory.Enabled = true;
@@ -180,20 +193,21 @@ namespace YoutubeDownloaderWinForms
             }
         }
 
-        // Можна додати кнопку "Скасувати"
+        // You can add a "Cancel" button
         private void btnCancel_Click(object sender, EventArgs e)
         {
             _cancellationTokenSource?.Cancel();
         }
 
-
         private async Task DownloadYouTubeVideo(string videoUrl, string outputDirectory, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var video = await _youtubeClient.Videos.GetAsync(videoUrl);
-            string sanitizedTitle = string.Join("_", video.Title.Split(Path.GetInvalidFileNameChars()));
+            string sanitizedTitle = video.Title.GetSafeFileName();
             var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(video.Id);
 
-            if (_muxedStreams != null && _muxedStreams.Any()) // Якщо ми вже отримали муксовані потоки
+            if (_muxedStreams != null && _muxedStreams.Any()) // If we have already retrieved muxed streams
             {
                 MuxedStreamInfo streamToDownload;
                 if (lbxQualities.SelectedIndex != -1)
@@ -202,28 +216,28 @@ namespace YoutubeDownloaderWinForms
                 }
                 else
                 {
-                    streamToDownload = _muxedStreams.First(); // За замовчуванням найвища якість
-                    Log($"Не вибрано якість. Завантажуємо відео з найвищою якістю ({streamToDownload.VideoQuality.Label}).");
+                    streamToDownload = _muxedStreams.First(); // Highest quality by default
+                    Log($"No quality selected. Downloading video with the highest quality ({streamToDownload.VideoQuality.Label}).");
                 }
 
                 var progress = new Progress<double>(p =>
                 {
-                    // Оновлення ProgressBar
+                    // Update ProgressBar
                     UpdateProgress((int)(p * 100));
                 });
 
                 string outputFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}_{streamToDownload.VideoQuality.Label}.{streamToDownload.Container}");
 
-                Log("Завантаження розпочато...");
+                Log($"Download of muxed stream ({streamToDownload.VideoQuality.Label}) started to: {outputFilePath}");
                 await _youtubeClient.Videos.Streams.DownloadAsync(streamToDownload, outputFilePath, progress, cancellationToken);
 
-                Log("Завантаження успішно завершено!");
-                Log($"Відео збережено як: {outputFilePath}");
+                Log("Download successfully completed!");
+                Log($"Video saved as: {outputFilePath}");
             }
-            else // Окремі потоки відео та аудіо
+            else // Separate video and audio streams (requires FFmpeg)
             {
-                Log("Муксовані потоки не знайдено. Завантаження окремих потоків відео та аудіо...");
-                Log("Це відео має окремі потоки відео та аудіо. Автоматичне об'єднання за допомогою FFmpeg.");
+                Log("No muxed streams found. Downloading separate video and audio streams...");
+                Log("This video has separate video and audio streams. Automatic merging with FFmpeg.");
 
                 var videoStreamInfo = streamManifest.GetVideoStreams()
                     .Where(s => s.Container == YoutubeExplode.Videos.Streams.Container.Mp4)
@@ -239,43 +253,82 @@ namespace YoutubeDownloaderWinForms
                 {
                     var progress = new Progress<double>(p =>
                     {
-                        // Оновлення ProgressBar
+                        // Update ProgressBar
                         UpdateProgress((int)(p * 100));
                     });
 
-                    string tempVideoFilePath = Path.Combine(outputDirectory, $"video_temp.{videoStreamInfo.Container}");
-                    string tempAudioFilePath = Path.Combine(outputDirectory, $"audio_temp.{audioStreamInfo.Container}");
-                    string combinedFilePath = Path.Combine(outputDirectory, $"output_video.mp4");
+                    // Use unique temp names to prevent conflicts
+                    string tempVideoFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_video_temp.mp4");
+                    string tempAudioFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_audio_temp.mp4");
+                    string combinedFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_combined_temp.mp4");
                     string finalFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}.mp4");
 
-                    Log($"Завантаження відео потоку до: {tempVideoFilePath}");
-                    await _youtubeClient.Videos.Streams.DownloadAsync(videoStreamInfo, tempVideoFilePath, progress, cancellationToken);
-
-                    Log($"Завантаження аудіо потоку до: {tempAudioFilePath}");
-                    await _youtubeClient.Videos.Streams.DownloadAsync(audioStreamInfo, tempAudioFilePath, progress, cancellationToken);
-
-                    Log("Обидва потоки завантажено. Об'єднання їх за допомогою FFmpeg...");
-
-                    var ffmpegArguments = $"-i \"{tempVideoFilePath}\" -i \"{tempAudioFilePath}\" -c copy \"{combinedFilePath}\"";
-                    await RunFFmpegProcess(ffmpegArguments, cancellationToken);
-
-                    File.Delete(tempVideoFilePath);
-                    File.Delete(tempAudioFilePath);
-
-                    if (File.Exists(combinedFilePath))
+                    try
                     {
-                        Log("Об'єднання завершено. Перейменування файлу...");
-                        File.Move(combinedFilePath, finalFilePath);
-                        Log($"Фінальне відео збережено як: {finalFilePath}");
+                        Log($"Downloading video stream to: {tempVideoFilePath}");
+                        await _youtubeClient.Videos.Streams.DownloadAsync(videoStreamInfo, tempVideoFilePath, progress, cancellationToken);
+
+                        Log($"Downloading audio stream to: {tempAudioFilePath}");
+                        await _youtubeClient.Videos.Streams.DownloadAsync(audioStreamInfo, tempAudioFilePath, progress, cancellationToken);
+
+                        Log("Both streams downloaded. Merging them using FFmpeg...");
+                        UpdateProgress(50); // Progress placeholder for merging
+
+                        var ffmpegArguments = $"-i \"{tempVideoFilePath}\" -i \"{tempAudioFilePath}\" -c copy \"{combinedFilePath}\"";
+                        await RunFFmpegProcess(ffmpegArguments, cancellationToken);
+
+                        if (File.Exists(combinedFilePath))
+                        {
+                            Log("Merging complete. Renaming file...");
+                            if (File.Exists(finalFilePath))
+                            {
+                                File.Delete(finalFilePath);
+                            }
+                            File.Move(combinedFilePath, finalFilePath);
+                            Log($"Final video saved as: {finalFilePath}");
+                            UpdateProgress(100);
+                        }
+                        else
+                        {
+                            Log("Merging failed. Final file was not created.");
+                        }
                     }
-                    else
+                    finally
                     {
-                        Log("Об'єднання не вдалося. Фінальний файл не було створено.");
+                        // Cleanup temporary files
+                        try 
+                        { 
+                            if (File.Exists(tempVideoFilePath)) 
+                                File.Delete(tempVideoFilePath); 
+                        } catch (Exception ex) 
+                        { 
+                            Log($"Error deleting {tempVideoFilePath}: {ex.Message}"); 
+                        }
+                        
+                        try 
+                        { 
+                            if (File.Exists(tempAudioFilePath)) 
+                                File.Delete(tempAudioFilePath); 
+                        } 
+                        catch (Exception ex) 
+                        { 
+                            Log($"Error deleting {tempAudioFilePath}: {ex.Message}"); 
+                        }
+                        
+                        try 
+                        { 
+                            if (File.Exists(combinedFilePath)) 
+                                File.Delete(combinedFilePath); 
+                        } 
+                        catch (Exception ex) 
+                        { 
+                            Log($"Error deleting {combinedFilePath}: {ex.Message}"); 
+                        }
                     }
                 }
                 else
                 {
-                    Log($"Не знайдено відповідних окремих потоків відео або аудіо для {video.Title}.");
+                    Log($"No suitable separate video or audio streams found for {video.Title}.");
                 }
             }
         }
@@ -284,7 +337,7 @@ namespace YoutubeDownloaderWinForms
         {
             var startInfo = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FFmpegFileName,
                 Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -292,41 +345,70 @@ namespace YoutubeDownloaderWinForms
                 CreateNoWindow = true
             };
 
-            using (var process = Process.Start(startInfo))
+            Process? process = null;
+
+            try
             {
+                process = Process.Start(startInfo);
+
                 if (process == null)
                 {
-                    Log("Не вдалося запустити FFmpeg. Переконайтеся, що він встановлений і знаходиться у вашому системному PATH.");
-                    return;
+                    Log($"Failed to start {FFmpegFileName}. Make sure it is installed and in your system PATH.");
+                    throw new InvalidOperationException("FFmpeg process could not be started.");
                 }
 
-                // Асинхронне читання виводу FFmpeg
+                // Asynchronously read FFmpeg error output (where it logs progress)
                 var errorReaderTask = Task.Run(async () =>
                 {
                     var errorReader = process.StandardError;
                     while (!errorReader.EndOfStream)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         string? line = await errorReader.ReadLineAsync();
                         if (line != null)
                         {
-                            Log($"FFmpeg: {line}"); // Виводимо логи FFmpeg у текстове поле
+                            Log($"FFmpeg: {line}"); // Log FFmpeg output to the text field
                         }
                     }
                 }, cancellationToken);
 
+                // Wait for the process to exit, respecting the cancellation token
                 await process.WaitForExitAsync(cancellationToken);
-                await errorReaderTask; // Дочекатися завершення читання виводу
+                await errorReaderTask; // Wait for output reading to finish
 
                 if (process.ExitCode != 0)
                 {
-                    Log($"FFmpeg завершився з помилкою. Код виходу: {process.ExitCode}");
+                    Log($"FFmpeg finished with an error. Exit code: {process.ExitCode}");
+                    throw new Exception($"FFmpeg failed with exit code {process.ExitCode}. See log for details.");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                if (process != null && !process.HasExited)
+                {
+                    try { process.Kill(); } catch { /* Ignore */ }
+                }
+                throw;
+            }
+            catch (Exception)
+            {
+                if (process != null && !process.HasExited)
+                {
+                    try { process.Kill(); } catch { /* Ignore */ }
+                }
+                throw;
+            }
         }
+    }
 
-        private void txtLog_TextChanged(object sender, EventArgs e)
+    // Helper extension class for robust file name creation
+    public static class StringExtensions
+    {
+        public static string GetSafeFileName(this string text)
         {
-
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var sanitized = string.Join("_", text.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries)).Trim();
+            return sanitized.Length > 100 ? sanitized.Substring(0, 100) : sanitized;
         }
     }
 }
