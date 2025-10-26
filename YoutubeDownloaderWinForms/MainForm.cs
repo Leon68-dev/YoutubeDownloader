@@ -324,6 +324,9 @@ namespace YoutubeDownloaderWinForms
             }
         }
 
+        private void txtLog_TextChanged(object sender, EventArgs e)
+        {
 
+        }
     }
 }

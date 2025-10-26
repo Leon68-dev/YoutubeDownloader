@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             btnBrowseDirectory = new Button();
             txtOutputDirectory = new TextBox();
             txtVideoUrl = new TextBox();
@@ -41,6 +42,7 @@
             // 
             // btnBrowseDirectory
             // 
+            btnBrowseDirectory.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnBrowseDirectory.Location = new Point(645, 9);
             btnBrowseDirectory.Name = "btnBrowseDirectory";
             btnBrowseDirectory.Size = new Size(94, 29);
@@ -51,6 +53,7 @@
             // 
             // txtOutputDirectory
             // 
+            txtOutputDirectory.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtOutputDirectory.Location = new Point(12, 11);
             txtOutputDirectory.Name = "txtOutputDirectory";
             txtOutputDirectory.Size = new Size(627, 27);
@@ -58,6 +61,7 @@
             // 
             // txtVideoUrl
             // 
+            txtVideoUrl.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtVideoUrl.Location = new Point(12, 44);
             txtVideoUrl.Name = "txtVideoUrl";
             txtVideoUrl.Size = new Size(727, 27);
@@ -65,40 +69,45 @@
             // 
             // btnDownload
             // 
-            btnDownload.Location = new Point(152, 86);
+            btnDownload.BackColor = SystemColors.GradientActiveCaption;
+            btnDownload.Location = new Point(152, 82);
             btnDownload.Name = "btnDownload";
             btnDownload.Size = new Size(94, 29);
             btnDownload.TabIndex = 2;
             btnDownload.Text = "Download";
-            btnDownload.UseVisualStyleBackColor = true;
+            btnDownload.UseVisualStyleBackColor = false;
             btnDownload.Click += btnDownload_Click;
             // 
             // lbxQualities
             // 
+            lbxQualities.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lbxQualities.FormattingEnabled = true;
             lbxQualities.Location = new Point(12, 121);
             lbxQualities.Name = "lbxQualities";
-            lbxQualities.Size = new Size(727, 124);
+            lbxQualities.Size = new Size(727, 144);
             lbxQualities.TabIndex = 4;
             // 
             // progressBar
             // 
-            progressBar.Location = new Point(12, 251);
+            progressBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            progressBar.Location = new Point(12, 271);
             progressBar.Name = "progressBar";
             progressBar.Size = new Size(727, 29);
             progressBar.TabIndex = 5;
             // 
             // txtLog
             // 
-            txtLog.Location = new Point(12, 286);
+            txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            txtLog.Location = new Point(12, 306);
             txtLog.Multiline = true;
             txtLog.Name = "txtLog";
-            txtLog.Size = new Size(727, 263);
+            txtLog.Size = new Size(727, 243);
             txtLog.TabIndex = 6;
+            txtLog.TextChanged += txtLog_TextChanged;
             // 
             // btnGetInfo
             // 
-            btnGetInfo.Location = new Point(12, 86);
+            btnGetInfo.Location = new Point(12, 82);
             btnGetInfo.Name = "btnGetInfo";
             btnGetInfo.Size = new Size(94, 29);
             btnGetInfo.TabIndex = 7;
@@ -108,7 +117,7 @@
             // 
             // btnCancel
             // 
-            btnCancel.Location = new Point(252, 86);
+            btnCancel.Location = new Point(252, 82);
             btnCancel.Name = "btnCancel";
             btnCancel.Size = new Size(94, 29);
             btnCancel.TabIndex = 8;
@@ -130,8 +139,9 @@
             Controls.Add(btnDownload);
             Controls.Add(txtOutputDirectory);
             Controls.Add(btnBrowseDirectory);
+            Icon = (Icon)resources.GetObject("$this.Icon");
             Name = "MainForm";
-            Text = "Form1";
+            Text = "Youtude Downloader";
             ResumeLayout(false);
             PerformLayout();
         }
