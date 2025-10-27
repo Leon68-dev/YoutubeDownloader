@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
+using System.IO; // Додаємо для роботи з файловою системою
 
 
 namespace YoutubeDownloaderWinForms
@@ -39,6 +40,7 @@ namespace YoutubeDownloaderWinForms
             progressBar.Value = 0;
             txtLog.ReadOnly = true;
             btnDownload.Enabled = false; // Disable download button until a stream is selected
+            btnOpenDir.Enabled = Directory.Exists(txtOutputDirectory.Text); // Enable if default dir exists
         }
 
         private void Log(string message)
@@ -76,6 +78,7 @@ namespace YoutubeDownloaderWinForms
                 if (fbd.ShowDialog() == DialogResult.OK)
                 {
                     txtOutputDirectory.Text = fbd.SelectedPath;
+                    btnOpenDir.Enabled = true; // Enable Open Directory button after selection
                 }
             }
         }
@@ -161,6 +164,7 @@ namespace YoutubeDownloaderWinForms
             btnBrowseDirectory.Enabled = false;
             txtVideoUrl.Enabled = false;
             lbxQualities.Enabled = false;
+            btnOpenDir.Enabled = false; // Disable Open Dir during download
             UpdateProgress(0);
             txtLog.Clear();
             Log("Download started...");
@@ -188,6 +192,7 @@ namespace YoutubeDownloaderWinForms
                 btnBrowseDirectory.Enabled = true;
                 txtVideoUrl.Enabled = true;
                 lbxQualities.Enabled = true;
+                btnOpenDir.Enabled = Directory.Exists(txtOutputDirectory.Text); // Re-enable if directory exists
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
             }
@@ -274,6 +279,13 @@ namespace YoutubeDownloaderWinForms
                         Log("Both streams downloaded. Merging them using FFmpeg...");
                         UpdateProgress(50); // Progress placeholder for merging
 
+                        // Ensure FFmpeg is found
+                        if (!File.Exists(FFmpegFileName) && !IsFFmpegInPath())
+                        {
+                            Log($"Error: {FFmpegFileName} not found. Please ensure FFmpeg is installed and accessible via system PATH, or place 'ffmpeg.exe' in the application directory.");
+                            throw new FileNotFoundException($"FFmpeg executable '{FFmpegFileName}' not found.");
+                        }
+
                         var ffmpegArguments = $"-i \"{tempVideoFilePath}\" -i \"{tempAudioFilePath}\" -c copy \"{combinedFilePath}\"";
                         await RunFFmpegProcess(ffmpegArguments, cancellationToken);
 
@@ -296,33 +308,34 @@ namespace YoutubeDownloaderWinForms
                     finally
                     {
                         // Cleanup temporary files
-                        try 
-                        { 
-                            if (File.Exists(tempVideoFilePath)) 
-                                File.Delete(tempVideoFilePath); 
-                        } catch (Exception ex) 
-                        { 
-                            Log($"Error deleting {tempVideoFilePath}: {ex.Message}"); 
+                        try
+                        {
+                            if (File.Exists(tempVideoFilePath))
+                                File.Delete(tempVideoFilePath);
                         }
-                        
-                        try 
-                        { 
-                            if (File.Exists(tempAudioFilePath)) 
-                                File.Delete(tempAudioFilePath); 
-                        } 
-                        catch (Exception ex) 
-                        { 
-                            Log($"Error deleting {tempAudioFilePath}: {ex.Message}"); 
+                        catch (Exception ex)
+                        {
+                            Log($"Error deleting {tempVideoFilePath}: {ex.Message}");
                         }
-                        
-                        try 
-                        { 
-                            if (File.Exists(combinedFilePath)) 
-                                File.Delete(combinedFilePath); 
-                        } 
-                        catch (Exception ex) 
-                        { 
-                            Log($"Error deleting {combinedFilePath}: {ex.Message}"); 
+
+                        try
+                        {
+                            if (File.Exists(tempAudioFilePath))
+                                File.Delete(tempAudioFilePath);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error deleting {tempAudioFilePath}: {ex.Message}");
+                        }
+
+                        try
+                        {
+                            if (File.Exists(combinedFilePath))
+                                File.Delete(combinedFilePath);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error deleting {combinedFilePath}: {ex.Message}");
                         }
                     }
                 }
@@ -332,6 +345,36 @@ namespace YoutubeDownloaderWinForms
                 }
             }
         }
+
+        private bool IsFFmpegInPath()
+        {
+            try
+            {
+                // Check if ffmpeg is directly in the application directory
+                if (File.Exists(Path.Combine(Application.StartupPath, FFmpegFileName + ".exe")))
+                {
+                    return true;
+                }
+
+                // Check if ffmpeg is in the system PATH
+                var values = Environment.GetEnvironmentVariable("PATH");
+                foreach (var path in values.Split(';'))
+                {
+                    var fullPath = Path.Combine(path, FFmpegFileName + ".exe");
+                    if (File.Exists(fullPath))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error checking FFmpeg path: {ex.Message}");
+                return false;
+            }
+        }
+
 
         private async Task RunFFmpegProcess(string arguments, CancellationToken cancellationToken)
         {
@@ -367,7 +410,9 @@ namespace YoutubeDownloaderWinForms
                         string? line = await errorReader.ReadLineAsync();
                         if (line != null)
                         {
-                            Log($"FFmpeg: {line}"); // Log FFmpeg output to the text field
+                            // FFmpeg writes progress and errors to StandardError
+                            Log($"FFmpeg: {line}");
+                            // You could parse 'line' to update progress bar more accurately if needed
                         }
                     }
                 }, cancellationToken);
@@ -397,6 +442,34 @@ namespace YoutubeDownloaderWinForms
                     try { process.Kill(); } catch { /* Ignore */ }
                 }
                 throw;
+            }
+        }
+
+        private void btnOpenDir_Click(object sender, EventArgs e)
+        {
+            string outputDirectory = txtOutputDirectory.Text;
+
+            if (Directory.Exists(outputDirectory))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo()
+                    {
+                        FileName = outputDirectory,
+                        UseShellExecute = true,
+                        Verb = "open"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log($"Error opening directory: {ex.Message}");
+                    MessageBox.Show($"Could not open directory: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            else
+            {
+                MessageBox.Show("Output directory does not exist.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Log($"Attempted to open non-existent directory: {outputDirectory}");
             }
         }
     }

@@ -38,12 +38,13 @@
             txtLog = new TextBox();
             btnGetInfo = new Button();
             btnCancel = new Button();
+            btnOpenDir = new Button();
             SuspendLayout();
             // 
             // btnBrowseDirectory
             // 
             btnBrowseDirectory.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnBrowseDirectory.Location = new Point(645, 9);
+            btnBrowseDirectory.Location = new Point(676, 9);
             btnBrowseDirectory.Name = "btnBrowseDirectory";
             btnBrowseDirectory.Size = new Size(94, 29);
             btnBrowseDirectory.TabIndex = 0;
@@ -56,7 +57,7 @@
             txtOutputDirectory.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtOutputDirectory.Location = new Point(12, 11);
             txtOutputDirectory.Name = "txtOutputDirectory";
-            txtOutputDirectory.Size = new Size(627, 27);
+            txtOutputDirectory.Size = new Size(658, 27);
             txtOutputDirectory.TabIndex = 1;
             // 
             // txtVideoUrl
@@ -64,7 +65,7 @@
             txtVideoUrl.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtVideoUrl.Location = new Point(12, 44);
             txtVideoUrl.Name = "txtVideoUrl";
-            txtVideoUrl.Size = new Size(727, 27);
+            txtVideoUrl.Size = new Size(758, 27);
             txtVideoUrl.TabIndex = 3;
             // 
             // btnDownload
@@ -84,24 +85,24 @@
             lbxQualities.FormattingEnabled = true;
             lbxQualities.Location = new Point(12, 121);
             lbxQualities.Name = "lbxQualities";
-            lbxQualities.Size = new Size(727, 144);
+            lbxQualities.Size = new Size(758, 124);
             lbxQualities.TabIndex = 4;
             // 
             // progressBar
             // 
             progressBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            progressBar.Location = new Point(12, 271);
+            progressBar.Location = new Point(12, 253);
             progressBar.Name = "progressBar";
-            progressBar.Size = new Size(727, 29);
+            progressBar.Size = new Size(758, 29);
             progressBar.TabIndex = 5;
             // 
             // txtLog
             // 
             txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            txtLog.Location = new Point(12, 306);
+            txtLog.Location = new Point(12, 288);
             txtLog.Multiline = true;
             txtLog.Name = "txtLog";
-            txtLog.Size = new Size(727, 243);
+            txtLog.Size = new Size(758, 255);
             txtLog.TabIndex = 6;
             // 
             // btnGetInfo
@@ -124,11 +125,23 @@
             btnCancel.UseVisualStyleBackColor = true;
             btnCancel.Click += btnCancel_Click;
             // 
+            // btnOpenDir
+            // 
+            btnOpenDir.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnOpenDir.Location = new Point(677, 82);
+            btnOpenDir.Name = "btnOpenDir";
+            btnOpenDir.Size = new Size(94, 29);
+            btnOpenDir.TabIndex = 9;
+            btnOpenDir.Text = "Open";
+            btnOpenDir.UseVisualStyleBackColor = true;
+            btnOpenDir.Click += btnOpenDir_Click;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(751, 559);
+            ClientSize = new Size(782, 553);
+            Controls.Add(btnOpenDir);
             Controls.Add(btnCancel);
             Controls.Add(btnGetInfo);
             Controls.Add(txtLog);
@@ -139,6 +152,7 @@
             Controls.Add(txtOutputDirectory);
             Controls.Add(btnBrowseDirectory);
             Icon = (Icon)resources.GetObject("$this.Icon");
+            MinimumSize = new Size(640, 480);
             Name = "MainForm";
             Text = "Youtude Downloader";
             ResumeLayout(false);
@@ -156,5 +170,6 @@
         private TextBox txtLog;
         private Button btnGetInfo;
         private Button btnCancel;
+        private Button btnOpenDir;
     }
 }
