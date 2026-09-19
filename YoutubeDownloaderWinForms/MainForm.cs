@@ -4,14 +4,14 @@ using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO; // Added for file system operations
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
-using System.IO; // Додаємо для роботи з файловою системою
-
 
 namespace YoutubeDownloaderWinForms
 {
@@ -19,8 +19,9 @@ namespace YoutubeDownloaderWinForms
     {
         private static readonly object _locker = new object();
         private YoutubeClient _youtubeClient;
-        private List<MuxedStreamInfo> _muxedStreams; // To store available streams
-        private CancellationTokenSource _cancellationTokenSource; // For download cancellation
+        private List<MuxedStreamInfo>? _muxedStreams; // To store available streams
+        private List<VideoQualityOption> _qualityOptions = new List<VideoQualityOption>(); // Available quality options
+        private CancellationTokenSource? _cancellationTokenSource; // For download cancellation
 
         private const string FFmpegFileName = "ffmpeg";
 
@@ -52,7 +53,7 @@ namespace YoutubeDownloaderWinForms
             }
             lock (_locker)
             {
-                txtLog.AppendText($"{message}{Environment.NewLine}");
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
             }
         }
 
@@ -96,6 +97,7 @@ namespace YoutubeDownloaderWinForms
             btnGetInfo.Enabled = false;
             btnDownload.Enabled = false;
             lbxQualities.Items.Clear();
+            _qualityOptions.Clear();
             _muxedStreams = null;
             UpdateProgress(0);
 
@@ -104,31 +106,90 @@ namespace YoutubeDownloaderWinForms
                 var video = await _youtubeClient.Videos.GetAsync(videoUrl);
                 var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(video.Id);
 
-                _muxedStreams = streamManifest.GetMuxedStreams()
-                                             .Where(s => s.Container == YoutubeExplode.Videos.Streams.Container.Mp4)
-                                             .OrderByDescending(s => s.VideoQuality)
-                                             .ToList();
+                Log($"Video found: \"{video.Title}\" ({video.Duration})");
 
-                if (_muxedStreams.Any())
+                // Get highest quality audio stream for merging or audio-only download
+                var bestAudio = streamManifest.GetAudioOnlyStreams()
+                    .OrderByDescending(s => s.Bitrate)
+                    .FirstOrDefault();
+
+                // 1. Muxed streams (video + audio combined, usually 360p / 720p)
+                _muxedStreams = streamManifest.GetMuxedStreams()
+                    .OrderByDescending(s => s.VideoQuality.MaxHeight)
+                    .ThenByDescending(s => s.VideoQuality.Framerate)
+                    .ToList();
+
+                foreach (var stream in _muxedStreams)
                 {
-                    Log($"Video found: {video.Title}");
-                    Log("Available muxed streams (video + audio):");
-                    int index = 0;
-                    foreach (var streamInfo in _muxedStreams)
+                    double sizeMb = stream.Size.Bytes / (1024.0 * 1024.0);
+                    _qualityOptions.Add(new VideoQualityOption
                     {
-                        double fileSizeMb = streamInfo.Size.Bytes / (1024.0 * 1024.0);
-                        lbxQualities.Items.Add($"[{index}] {streamInfo.VideoQuality.Label} ({streamInfo.Container.Name}) {fileSizeMb:F2} MB");
-                        index++;
-                    }
-                    lbxQualities.SelectedIndex = 0; // Select highest quality by default
+                        DisplayText = $"[Video + Audio] {stream.VideoQuality.Label} ({stream.Container.Name}) ~ {sizeMb:F1} MB",
+                        MuxedStream = stream,
+                        RequiresMuxing = false
+                    });
+                }
+
+                // 2. Video-only streams for higher qualities (1080p, 1440p, 4K, 60fps)
+                var videoOnlyStreams = streamManifest.GetVideoOnlyStreams()
+                    .OrderByDescending(s => s.VideoQuality.MaxHeight)
+                    .ThenByDescending(s => s.VideoQuality.Framerate)
+                    .ThenByDescending(s => s.Bitrate)
+                    .ToList();
+
+                // Group by label and container to avoid duplicate resolution entries
+                var distinctVideoStreams = videoOnlyStreams
+                    .GroupBy(s => new { s.VideoQuality.Label, s.Container.Name })
+                    .Select(g => g.First())
+                    .ToList();
+
+                foreach (var vStream in distinctVideoStreams)
+                {
+                    var matchedAudio = streamManifest.GetAudioOnlyStreams()
+                        .Where(a => a.Container == vStream.Container)
+                        .OrderByDescending(a => a.Bitrate)
+                        .FirstOrDefault() ?? bestAudio;
+
+                    double vSizeMb = vStream.Size.Bytes / (1024.0 * 1024.0);
+                    double aSizeMb = matchedAudio != null ? (matchedAudio.Size.Bytes / (1024.0 * 1024.0)) : 0;
+                    double totalSizeMb = vSizeMb + aSizeMb;
+
+                    _qualityOptions.Add(new VideoQualityOption
+                    {
+                        DisplayText = $"[HD/FFmpeg] {vStream.VideoQuality.Label} ({vStream.Container.Name}) ~ {totalSizeMb:F1} MB",
+                        VideoStream = vStream,
+                        AudioStream = matchedAudio,
+                        RequiresMuxing = true
+                    });
+                }
+
+                // 3. Audio-only stream option
+                if (bestAudio != null)
+                {
+                    double aSizeMb = bestAudio.Size.Bytes / (1024.0 * 1024.0);
+                    _qualityOptions.Add(new VideoQualityOption
+                    {
+                        DisplayText = $"[Audio Only] Best quality ({bestAudio.Bitrate.KiloBitsPerSecond:F0} kbps, {bestAudio.Container.Name}) ~ {aSizeMb:F1} MB",
+                        AudioStream = bestAudio,
+                        IsAudioOnly = true,
+                        RequiresMuxing = false
+                    });
+                }
+
+                foreach (var option in _qualityOptions)
+                {
+                    lbxQualities.Items.Add(option.DisplayText);
+                }
+
+                if (_qualityOptions.Any())
+                {
+                    lbxQualities.SelectedIndex = 0;
                     btnDownload.Enabled = true;
+                    Log($"Found {_qualityOptions.Count} quality options.");
                 }
                 else
                 {
-                    Log($"Video found: {video.Title}");
-                    Log("No muxed streams found. Separate video and audio streams will be downloaded.");
-                    // In this case, we don't provide a choice, just allow download
-                    btnDownload.Enabled = true;
+                    Log("No downloadable streams found for this video.");
                 }
             }
             catch (Exception ex)
@@ -157,6 +218,23 @@ namespace YoutubeDownloaderWinForms
                 MessageBox.Show("Please enter a YouTube video URL.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            if (lbxQualities.SelectedIndex < 0 || lbxQualities.SelectedIndex >= _qualityOptions.Count)
+            {
+                MessageBox.Show("Please select a video quality from the list.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var selectedOption = _qualityOptions[lbxQualities.SelectedIndex];
+
+            // Verify FFmpeg presence prior to downloading if muxing is needed
+            if (selectedOption.RequiresMuxing && !IsFFmpegInPath())
+            {
+                string msg = $"The selected quality \"{selectedOption.DisplayText}\" requires FFmpeg to merge video and audio.\n\n" +
+                             $"Please place 'ffmpeg.exe' in the application folder or add it to system PATH.";
+                MessageBox.Show(msg, "FFmpeg Not Found", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log("Error: FFmpeg is not found in the system.");
+                return;
+            }
 
             // Disable buttons during download
             btnDownload.Enabled = false;
@@ -167,17 +245,18 @@ namespace YoutubeDownloaderWinForms
             btnOpenDir.Enabled = false; // Disable Open Dir during download
             UpdateProgress(0);
             txtLog.Clear();
-            Log("Download started...");
+            Log($"Starting download: {selectedOption.DisplayText}");
 
             _cancellationTokenSource = new CancellationTokenSource();
 
             try
             {
-                await DownloadYouTubeVideo(videoUrl, outputDirectory, _cancellationTokenSource.Token);
+                await DownloadYouTubeVideo(videoUrl, selectedOption, outputDirectory, _cancellationTokenSource.Token);
             }
             catch (OperationCanceledException)
             {
-                Log("Download canceled.");
+                Log("Download canceled by user.");
+                UpdateProgress(0);
             }
             catch (Exception ex)
             {
@@ -204,144 +283,100 @@ namespace YoutubeDownloaderWinForms
             _cancellationTokenSource?.Cancel();
         }
 
-        private async Task DownloadYouTubeVideo(string videoUrl, string outputDirectory, CancellationToken cancellationToken)
+        private async Task DownloadYouTubeVideo(string videoUrl, VideoQualityOption option, string outputDirectory, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var video = await _youtubeClient.Videos.GetAsync(videoUrl);
+            var video = await _youtubeClient.Videos.GetAsync(videoUrl, cancellationToken);
             string sanitizedTitle = video.Title.GetSafeFileName();
-            var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(video.Id);
 
-            if (_muxedStreams != null && _muxedStreams.Any()) // If we have already retrieved muxed streams
+            // Case 1: Audio-only download
+            if (option.IsAudioOnly && option.AudioStream != null)
             {
-                MuxedStreamInfo streamToDownload;
-                if (lbxQualities.SelectedIndex != -1)
-                {
-                    streamToDownload = _muxedStreams[lbxQualities.SelectedIndex];
-                }
-                else
-                {
-                    streamToDownload = _muxedStreams.First(); // Highest quality by default
-                    Log($"No quality selected. Downloading video with the highest quality ({streamToDownload.VideoQuality.Label}).");
-                }
+                string audioFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}.{option.AudioStream.Container.Name}");
+                Log($"Downloading audio to: {audioFilePath}");
 
-                var progress = new Progress<double>(p =>
-                {
-                    // Update ProgressBar
-                    UpdateProgress((int)(p * 100));
-                });
+                var progress = new Progress<double>(p => UpdateProgress((int)(p * 100)));
+                await _youtubeClient.Videos.Streams.DownloadAsync(option.AudioStream, audioFilePath, progress, cancellationToken);
 
-                string outputFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}_{streamToDownload.VideoQuality.Label}.{streamToDownload.Container}");
+                Log($"Audio successfully saved: {audioFilePath}");
+                UpdateProgress(100);
+                return;
+            }
 
-                Log($"Download of muxed stream ({streamToDownload.VideoQuality.Label}) started to: {outputFilePath}");
-                await _youtubeClient.Videos.Streams.DownloadAsync(streamToDownload, outputFilePath, progress, cancellationToken);
+            // Case 2: Muxed stream download (video + audio combined, no FFmpeg required)
+            if (!option.RequiresMuxing && option.MuxedStream != null)
+            {
+                string outputFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}_{option.MuxedStream.VideoQuality.Label}.{option.MuxedStream.Container.Name}");
+                Log($"Downloading muxed stream ({option.MuxedStream.VideoQuality.Label}) to: {outputFilePath}");
+
+                var progress = new Progress<double>(p => UpdateProgress((int)(p * 100)));
+                await _youtubeClient.Videos.Streams.DownloadAsync(option.MuxedStream, outputFilePath, progress, cancellationToken);
 
                 Log("Download successfully completed!");
                 Log($"Video saved as: {outputFilePath}");
+                UpdateProgress(100);
+                return;
             }
-            else // Separate video and audio streams (requires FFmpeg)
+
+            // Case 3: Separate video and audio streams (requires FFmpeg merging)
+            if (option.VideoStream != null && option.AudioStream != null)
             {
-                Log("No muxed streams found. Downloading separate video and audio streams...");
-                Log("This video has separate video and audio streams. Automatic merging with FFmpeg.");
+                string ext = option.VideoStream.Container.Name;
+                string tempVideoFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_video_temp.{ext}");
+                string tempAudioFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_audio_temp.{option.AudioStream.Container.Name}");
+                string finalFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}_{option.VideoStream.VideoQuality.Label}.mp4");
 
-                var videoStreamInfo = streamManifest.GetVideoStreams()
-                    .Where(s => s.Container == YoutubeExplode.Videos.Streams.Container.Mp4)
-                    .OrderByDescending(s => s.VideoQuality)
-                    .FirstOrDefault();
-
-                var audioStreamInfo = streamManifest.GetAudioStreams()
-                    .Where(s => s.Container == YoutubeExplode.Videos.Streams.Container.Mp4)
-                    .OrderByDescending(s => s.Bitrate)
-                    .FirstOrDefault();
-
-                if (videoStreamInfo != null && audioStreamInfo != null)
+                try
                 {
-                    var progress = new Progress<double>(p =>
-                    {
-                        // Update ProgressBar
-                        UpdateProgress((int)(p * 100));
-                    });
+                    // Video download: 0% -> 50%
+                    Log($"Downloading video stream ({option.VideoStream.VideoQuality.Label})...");
+                    var videoProgress = new Progress<double>(p => UpdateProgress((int)(p * 50)));
+                    await _youtubeClient.Videos.Streams.DownloadAsync(option.VideoStream, tempVideoFilePath, videoProgress, cancellationToken);
 
-                    // Use unique temp names to prevent conflicts
-                    string tempVideoFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_video_temp.mp4");
-                    string tempAudioFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_audio_temp.mp4");
-                    string combinedFilePath = Path.Combine(outputDirectory, $"{Guid.NewGuid():N}_combined_temp.mp4");
-                    string finalFilePath = Path.Combine(outputDirectory, $"{sanitizedTitle}.mp4");
+                    // Audio download: 50% -> 90%
+                    Log("Downloading audio stream...");
+                    var audioProgress = new Progress<double>(p => UpdateProgress(50 + (int)(p * 40)));
+                    await _youtubeClient.Videos.Streams.DownloadAsync(option.AudioStream, tempAudioFilePath, audioProgress, cancellationToken);
+
+                    // FFmpeg merging: 90% -> 100%
+                    Log("Merging video and audio using FFmpeg...");
+                    UpdateProgress(90);
+
+                    if (File.Exists(finalFilePath))
+                    {
+                        File.Delete(finalFilePath);
+                    }
+
+                    var ffmpegArguments = $"-i \"{tempVideoFilePath}\" -i \"{tempAudioFilePath}\" -c copy -y \"{finalFilePath}\"";
+                    await RunFFmpegProcess(ffmpegArguments, cancellationToken);
+
+                    Log($"Download successfully completed!");
+                    Log($"Final video saved as: {finalFilePath}");
+                    UpdateProgress(100);
+                }
+                finally
+                {
+                    // Cleanup temporary files
+                    try
+                    {
+                        if (File.Exists(tempVideoFilePath))
+                            File.Delete(tempVideoFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error deleting {tempVideoFilePath}: {ex.Message}");
+                    }
 
                     try
                     {
-                        Log($"Downloading video stream to: {tempVideoFilePath}");
-                        await _youtubeClient.Videos.Streams.DownloadAsync(videoStreamInfo, tempVideoFilePath, progress, cancellationToken);
-
-                        Log($"Downloading audio stream to: {tempAudioFilePath}");
-                        await _youtubeClient.Videos.Streams.DownloadAsync(audioStreamInfo, tempAudioFilePath, progress, cancellationToken);
-
-                        Log("Both streams downloaded. Merging them using FFmpeg...");
-                        UpdateProgress(50); // Progress placeholder for merging
-
-                        // Ensure FFmpeg is found
-                        if (!File.Exists(FFmpegFileName) && !IsFFmpegInPath())
-                        {
-                            Log($"Error: {FFmpegFileName} not found. Please ensure FFmpeg is installed and accessible via system PATH, or place 'ffmpeg.exe' in the application directory.");
-                            throw new FileNotFoundException($"FFmpeg executable '{FFmpegFileName}' not found.");
-                        }
-
-                        var ffmpegArguments = $"-i \"{tempVideoFilePath}\" -i \"{tempAudioFilePath}\" -c copy \"{combinedFilePath}\"";
-                        await RunFFmpegProcess(ffmpegArguments, cancellationToken);
-
-                        if (File.Exists(combinedFilePath))
-                        {
-                            Log("Merging complete. Renaming file...");
-                            if (File.Exists(finalFilePath))
-                            {
-                                File.Delete(finalFilePath);
-                            }
-                            File.Move(combinedFilePath, finalFilePath);
-                            Log($"Final video saved as: {finalFilePath}");
-                            UpdateProgress(100);
-                        }
-                        else
-                        {
-                            Log("Merging failed. Final file was not created.");
-                        }
+                        if (File.Exists(tempAudioFilePath))
+                            File.Delete(tempAudioFilePath);
                     }
-                    finally
+                    catch (Exception ex)
                     {
-                        // Cleanup temporary files
-                        try
-                        {
-                            if (File.Exists(tempVideoFilePath))
-                                File.Delete(tempVideoFilePath);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log($"Error deleting {tempVideoFilePath}: {ex.Message}");
-                        }
-
-                        try
-                        {
-                            if (File.Exists(tempAudioFilePath))
-                                File.Delete(tempAudioFilePath);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log($"Error deleting {tempAudioFilePath}: {ex.Message}");
-                        }
-
-                        try
-                        {
-                            if (File.Exists(combinedFilePath))
-                                File.Delete(combinedFilePath);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log($"Error deleting {combinedFilePath}: {ex.Message}");
-                        }
+                        Log($"Error deleting {tempAudioFilePath}: {ex.Message}");
                     }
-                }
-                else
-                {
-                    Log($"No suitable separate video or audio streams found for {video.Title}.");
                 }
             }
         }
@@ -351,19 +386,23 @@ namespace YoutubeDownloaderWinForms
             try
             {
                 // Check if ffmpeg is directly in the application directory
-                if (File.Exists(Path.Combine(Application.StartupPath, FFmpegFileName + ".exe")))
+                if (File.Exists(Path.Combine(Application.StartupPath, FFmpegFileName + ".exe")) ||
+                    File.Exists(Path.Combine(Application.StartupPath, FFmpegFileName)))
                 {
                     return true;
                 }
 
                 // Check if ffmpeg is in the system PATH
                 var values = Environment.GetEnvironmentVariable("PATH");
-                foreach (var path in values.Split(';'))
+                if (values != null)
                 {
-                    var fullPath = Path.Combine(path, FFmpegFileName + ".exe");
-                    if (File.Exists(fullPath))
+                    foreach (var path in values.Split(';'))
                     {
-                        return true;
+                        var fullPath = Path.Combine(path.Trim(), FFmpegFileName + ".exe");
+                        if (File.Exists(fullPath))
+                        {
+                            return true;
+                        }
                     }
                 }
                 return false;
@@ -375,12 +414,15 @@ namespace YoutubeDownloaderWinForms
             }
         }
 
-
         private async Task RunFFmpegProcess(string arguments, CancellationToken cancellationToken)
         {
+            string ffmpegExecutable = File.Exists(Path.Combine(Application.StartupPath, FFmpegFileName + ".exe"))
+                ? Path.Combine(Application.StartupPath, FFmpegFileName + ".exe")
+                : FFmpegFileName;
+
             var startInfo = new ProcessStartInfo
             {
-                FileName = FFmpegFileName,
+                FileName = ffmpegExecutable,
                 Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -408,11 +450,9 @@ namespace YoutubeDownloaderWinForms
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         string? line = await errorReader.ReadLineAsync();
-                        if (line != null)
+                        if (line != null && line.StartsWith("frame="))
                         {
                             // FFmpeg writes progress and errors to StandardError
-                            Log($"FFmpeg: {line}");
-                            // You could parse 'line' to update progress bar more accurately if needed
                         }
                     }
                 }, cancellationToken);
@@ -472,6 +512,17 @@ namespace YoutubeDownloaderWinForms
                 Log($"Attempted to open non-existent directory: {outputDirectory}");
             }
         }
+    }
+
+    // Data model for storing stream options in the UI
+    public class VideoQualityOption
+    {
+        public string DisplayText { get; set; } = string.Empty;
+        public MuxedStreamInfo? MuxedStream { get; set; }
+        public IVideoStreamInfo? VideoStream { get; set; }
+        public IAudioStreamInfo? AudioStream { get; set; }
+        public bool RequiresMuxing { get; set; }
+        public bool IsAudioOnly { get; set; }
     }
 
     // Helper extension class for robust file name creation
